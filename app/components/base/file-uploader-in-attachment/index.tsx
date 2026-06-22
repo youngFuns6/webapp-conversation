@@ -26,9 +26,13 @@ interface Option {
 }
 interface FileUploaderInAttachmentProps {
   fileConfig: FileUpload
+  compact?: boolean
+  toolbarOnly?: boolean
 }
 const FileUploaderInAttachment = ({
   fileConfig,
+  compact = false,
+  toolbarOnly = false,
 }: FileUploaderInAttachmentProps) => {
   const { t } = useTranslation()
   const files = useStore(s => s.files)
@@ -53,12 +57,15 @@ const FileUploaderInAttachment = ({
     return (
       <Button
         key={option.value}
-        // variant='tertiary'
-        className={cn('relative grow', open && 'bg-components-button-tertiary-bg-hover')}
+        className={cn(
+          'relative',
+          compact ? 'h-9 w-9 !p-0 flex items-center justify-center rounded-xl border border-gray-200 bg-white hover:bg-gray-50' : 'grow',
+          open && 'bg-gray-50',
+        )}
         disabled={!!(fileConfig.number_limits && files.length >= fileConfig.number_limits)}
       >
         {option.icon}
-        <span className='ml-1'>{option.label}</span>
+        {!compact && <span className='ml-1'>{option.label}</span>}
         {
           option.value === TransferMethod.local_file && (
             <FileInput fileConfig={fileConfig} />
@@ -66,7 +73,7 @@ const FileUploaderInAttachment = ({
         }
       </Button>
     )
-  }, [fileConfig, files.length])
+  }, [compact, fileConfig, files.length])
   const renderTrigger = useCallback((option: Option) => {
     return (open: boolean) => renderButton(option, open)
   }, [renderButton])
@@ -87,23 +94,25 @@ const FileUploaderInAttachment = ({
 
   return (
     <div>
-      <div className='flex items-center space-x-1'>
+      <div className={cn('flex items-center', compact ? 'gap-1.5' : 'space-x-1')}>
         {options.map(renderOption)}
       </div>
-      <div className='mt-1 space-y-1'>
-        {
-          files.map(file => (
-            <FileItem
-              key={file.id}
-              file={file}
-              showDeleteAction
-              showDownloadAction={false}
-              onRemove={() => handleRemoveFile(file.id)}
-              onReUpload={() => handleReUploadFile(file.id)}
-            />
-          ))
-        }
-      </div>
+      {!toolbarOnly && (
+        <div className={cn(compact ? 'flex flex-wrap gap-2 mt-2' : 'mt-1 space-y-1')}>
+          {
+            files.map(file => (
+              <FileItem
+                key={file.id}
+                file={file}
+                showDeleteAction
+                showDownloadAction={false}
+                onRemove={() => handleRemoveFile(file.id)}
+                onReUpload={() => handleReUploadFile(file.id)}
+              />
+            ))
+          }
+        </div>
+      )}
     </div>
   )
 }
@@ -112,18 +121,22 @@ interface FileUploaderInAttachmentWrapperProps {
   value?: FileEntity[]
   onChange: (files: FileEntity[]) => void
   fileConfig: FileUpload
+  compact?: boolean
+  toolbarOnly?: boolean
 }
 const FileUploaderInAttachmentWrapper = ({
   value,
   onChange,
   fileConfig,
+  compact,
+  toolbarOnly,
 }: FileUploaderInAttachmentWrapperProps) => {
   return (
     <FileContextProvider
       value={value}
       onChange={onChange}
     >
-      <FileUploaderInAttachment fileConfig={fileConfig} />
+      <FileUploaderInAttachment fileConfig={fileConfig} compact={compact} toolbarOnly={toolbarOnly} />
     </FileContextProvider>
   )
 }

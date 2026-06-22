@@ -2,6 +2,24 @@
 @tailwind components;
 @tailwind utilities;
 
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.think-block-content .streamdown-markdown {
+  font-size: 13px;
+  color: rgb(146 64 14 / 0.85);
+}
+
+.streaming-answer {
+  display: inline;
+}
+
+.streaming-answer .streamdown-markdown {
+  display: inline;
+}
+
 @source "../../node_modules/streamdown/dist/index.js";
 
 :root {

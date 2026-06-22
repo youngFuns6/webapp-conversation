@@ -53,6 +53,10 @@ export const fetchAppParams = async () => {
   return get('parameters')
 }
 
+export const fetchAppSite = async () => {
+  return get('site')
+}
+
 export const updateFeedback = async ({ url, body }: { url: string, body: Feedbacktype }) => {
   return post(url, { body })
 }

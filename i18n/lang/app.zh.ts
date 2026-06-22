@@ -8,6 +8,9 @@ const translation = {
     newChat: '新对话',
     newChatDefaultName: '新的对话',
     openingStatementTitle: '对话开场白',
+    inputPlaceholder: '输入消息，开始对话...',
+    thinkProcess: '思考过程',
+    guestUser: '访客',
     powerBy: 'Powered by',
     prompt: '提示词',
     privatePromptConfigTitle: '对话设置',
@@ -26,6 +29,17 @@ const translation = {
   },
   variableTable: {
     optional: '可选',
+  },
+  auth: {
+    login: '登录',
+    logout: '退出',
+    loginSubtitle: '请使用 Dify 账号登录后继续使用',
+    email: '邮箱',
+    password: '密码',
+    emailPlaceholder: '请输入邮箱',
+    passwordPlaceholder: '请输入密码',
+    emailPasswordRequired: '请输入邮箱和密码',
+    loginFailed: '登录失败，请检查账号密码',
   },
 }
 

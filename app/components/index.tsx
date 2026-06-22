@@ -9,8 +9,8 @@ import Toast from '@/app/components/base/toast'
 import Sidebar from '@/app/components/sidebar'
 import ConfigSence from '@/app/components/config-scence'
 import Header from '@/app/components/header'
-import { fetchAppParams, fetchChatList, fetchConversations, generationConversationName, sendChatMessage, updateFeedback } from '@/service'
-import type { ChatItem, ConversationItem, Feedbacktype, PromptConfig, VisionFile, VisionSettings } from '@/types/app'
+import { fetchAppParams, fetchAppSite, fetchChatList, fetchConversations, generationConversationName, sendChatMessage, updateFeedback } from '@/service'
+import type { AppInfo, ChatItem, ConversationItem, Feedbacktype, PromptConfig, VisionFile, VisionSettings } from '@/types/app'
 import type { FileUpload } from '@/app/components/base/file-uploader-in-attachment/types'
 import { Resolution, TransferMethod, WorkflowRunningStatus } from '@/types/app'
 import Chat from '@/app/components/chat'
@@ -19,19 +19,27 @@ import useBreakpoints, { MediaType } from '@/hooks/use-breakpoints'
 import Loading from '@/app/components/base/loading'
 import { replaceVarWithValues, userInputsFormToPromptVariables } from '@/utils/prompt'
 import AppUnavailable from '@/app/components/app-unavailable'
-import { API_KEY, APP_ID, APP_INFO, isShowPrompt, promptTemplate } from '@/config'
+import Login from '@/app/components/auth/login'
+import { APP_INFO, getChatInputsForMode, getClientAppCredentials, isShowPrompt, promptTemplate } from '@/config'
+import type { ChatAccessMode } from '@/config'
+import { setChatMode } from '@/service/chat-mode'
+import { fetchAuthStatus, logout as authLogout } from '@/service/auth'
+import type { AuthUser } from '@/service/auth'
 import type { Annotation as AnnotationType } from '@/types/log'
 import { addFileInfos, sortAgentSorts } from '@/utils/tools'
+import { mergeSiteInfo } from '@/utils/locale'
 
 export interface IMainProps {
-  params: any
+  mode?: ChatAccessMode
 }
 
-const Main: FC<IMainProps> = () => {
+const Main: FC<IMainProps> = ({ mode = 'internal' }) => {
   const { t } = useTranslation()
   const media = useBreakpoints()
   const isMobile = media === MediaType.mobile
-  const hasSetAppConfig = APP_ID && API_KEY
+  const { appId: activeAppId, apiKey: activeApiKey } = getClientAppCredentials(mode)
+  const hasSetAppConfig = activeAppId && activeApiKey
+  const requireLogin = mode === 'internal' && APP_INFO.enable_user_login
 
   /*
   * app info
@@ -49,10 +57,48 @@ const Main: FC<IMainProps> = () => {
     transfer_methods: [TransferMethod.local_file],
   })
   const [fileConfig, setFileConfig] = useState<FileUpload | undefined>()
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null)
+  const [authChecked, setAuthChecked] = useState(!requireLogin)
+  const [siteInfo, setSiteInfo] = useState<AppInfo>(APP_INFO)
 
   useEffect(() => {
-    if (APP_INFO?.title) { document.title = `${APP_INFO.title} - Powered by Dify` }
-  }, [APP_INFO?.title])
+    setChatMode(mode)
+  }, [mode])
+
+  useEffect(() => {
+    fetchAppSite()
+      .then((site) => {
+        const merged = mergeSiteInfo(APP_INFO, site)
+        setSiteInfo(merged)
+        setLocaleOnClient(merged.default_language, true)
+        if (merged.title)
+        { document.title = merged.title }
+      })
+      .catch(() => {
+        setLocaleOnClient(APP_INFO.default_language, true)
+      })
+  }, [])
+
+  useEffect(() => {
+    if (!requireLogin) {
+      setAuthChecked(true)
+      return
+    }
+
+    fetchAuthStatus()
+      .then(({ logged_in, user }) => {
+        if (logged_in && user)
+        { setAuthUser(user) }
+      })
+      .finally(() => {
+        setAuthChecked(true)
+      })
+  }, [])
+
+  const handleLogout = async () => {
+    await authLogout()
+    setAuthUser(null)
+  }
 
   // onData change thought (the produce obj). https://github.com/immerjs/immer/issues/576
   useEffect(() => {
@@ -92,6 +138,23 @@ const Main: FC<IMainProps> = () => {
     // parse variables in introduction
     setChatList(generateNewChatListWithOpenStatement('', inputs))
   }
+
+  const autoStartChatIfReady = (variables: PromptConfig['prompt_variables']) => {
+    if (!variables || isChatStarted || !isNewConversation)
+    { return false }
+
+    if (variables.some(v => v.required))
+    { return false }
+
+    const defaultInputs: Record<string, any> = {}
+    variables.forEach((v) => {
+      if (v.default !== undefined && v.default !== '')
+      { defaultInputs[v.key] = v.default }
+    })
+    handleStartChat(defaultInputs)
+    return true
+  }
+
   const hasSetInputs = (() => {
     if (!isNewConversation) { return true }
 
@@ -159,12 +222,23 @@ const Main: FC<IMainProps> = () => {
     if (id === '-1') {
       createNewChat()
       setConversationIdChangeBecauseOfNew(true)
+      if (promptConfig && !promptConfig.prompt_variables.some(v => v.required)) {
+        const defaultInputs: Record<string, any> = {}
+        promptConfig.prompt_variables.forEach((v) => {
+          if (v.default !== undefined && v.default !== '')
+          { defaultInputs[v.key] = v.default }
+        })
+        handleStartChat(defaultInputs)
+      }
+      else {
+        setChatNotStarted()
+      }
     }
     else {
       setConversationIdChangeBecauseOfNew(false)
     }
     // trigger handleConversationSwitch
-    setCurrConversationId(id, APP_ID)
+    setCurrConversationId(id, activeAppId)
     hideSidebar()
   }
 
@@ -173,17 +247,6 @@ const Main: FC<IMainProps> = () => {
   */
   const [chatList, setChatList, getChatList] = useGetState<ChatItem[]>([])
   const chatListDomRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    // scroll to bottom with page-level scrolling
-    if (chatListDomRef.current) {
-      setTimeout(() => {
-        chatListDomRef.current?.scrollIntoView({
-          behavior: 'auto',
-          block: 'end',
-        })
-      }, 50)
-    }
-  }, [chatList, currConversationId])
   // user can not edit inputs if user had send message
   const canEditInputs = !chatList.some(item => item.isAnswer === false) && isNewConversation
   const createNewChat = () => {
@@ -236,13 +299,12 @@ const Main: FC<IMainProps> = () => {
           throw new Error(error)
           return
         }
-        const _conversationId = getConversationIdFromStorage(APP_ID)
+        const _conversationId = getConversationIdFromStorage(activeAppId)
         const currentConversation = conversations.find(item => item.id === _conversationId)
         const isNotNewConversation = !!currentConversation
 
         // fetch new conversation info
         const { user_input_form, opening_statement: introduction, file_upload, system_parameters, suggested_questions = [] }: any = appParams
-        setLocaleOnClient(APP_INFO.default_language, true)
         setNewConversationInfo({
           name: t('app.chat.newChatDefaultName'),
           introduction,
@@ -276,9 +338,12 @@ const Main: FC<IMainProps> = () => {
         })
         setConversationList(conversations as ConversationItem[])
 
-        if (isNotNewConversation) { setCurrConversationId(_conversationId, APP_ID, false) }
+        if (isNotNewConversation) { setCurrConversationId(_conversationId, activeAppId, false) }
 
         setInited(true)
+
+        if (!isNotNewConversation)
+        { autoStartChatIfReady(prompt_variables) }
       }
       catch (e: any) {
         if (e.status === 404) {
@@ -292,8 +357,14 @@ const Main: FC<IMainProps> = () => {
     })()
   }, [])
 
+  useEffect(() => {
+    if (!inited || !promptConfig)
+    { return }
+    autoStartChatIfReady(promptConfig.prompt_variables)
+  }, [inited, promptConfig, authUser])
+
   const [isResponding, { setTrue: setRespondingTrue, setFalse: setRespondingFalse }] = useBoolean(false)
-  const [abortController, setAbortController] = useState<AbortController | null>(null)
+  const [_abortController, setAbortController] = useState<AbortController | null>(null)
   const { notify } = Toast
   const logError = (message: string) => {
     notify({ type: 'error', message })
@@ -307,7 +378,7 @@ const Main: FC<IMainProps> = () => {
     let emptyRequiredInput = false
     promptConfig.prompt_variables.forEach((item) => {
       if (item.required && !currInputs[item.key])
-        emptyRequiredInput = true
+      { emptyRequiredInput = true }
     })
 
     if (emptyRequiredInput) {
@@ -317,12 +388,23 @@ const Main: FC<IMainProps> = () => {
     return true
   }
 
-  const [controlFocus, setControlFocus] = useState(0)
-  const [openingSuggestedQuestions, setOpeningSuggestedQuestions] = useState<string[]>([])
-  const [messageTaskId, setMessageTaskId] = useState('')
-  const [hasStopResponded, setHasStopResponded, getHasStopResponded] = useGetState(false)
-  const [isRespondingConIsCurrCon, setIsRespondingConCurrCon, getIsRespondingConIsCurrCon] = useGetState(true)
-  const [userQuery, setUserQuery] = useState('')
+  const [_controlFocus, _setControlFocus] = useState(0)
+  const [_openingSuggestedQuestions, _setOpeningSuggestedQuestions] = useState<string[]>([])
+  const [_messageTaskId, setMessageTaskId] = useState('')
+  const [_hasStopResponded, _setHasStopResponded, _getHasStopResponded] = useGetState(false)
+  const [_isRespondingConIsCurrCon, setIsRespondingConCurrCon, _getIsRespondingConIsCurrCon] = useGetState(true)
+  const [_userQuery, _setUserQuery] = useState('')
+
+  function appendStreamAnswer(current: string, chunk: string): string {
+    if (!chunk)
+    { return current }
+    if (!current)
+    { return chunk }
+    // Dify workflow may send cumulative answer in a single message event
+    if (chunk.startsWith(current))
+    { return chunk }
+    return current + chunk
+  }
 
   const updateCurrentQA = ({
     responseItem,
@@ -341,7 +423,13 @@ const Main: FC<IMainProps> = () => {
       (draft) => {
         if (!draft.find(item => item.id === questionId)) { draft.push({ ...questionItem }) }
 
-        draft.push({ ...responseItem })
+        draft.push({
+          ...responseItem,
+          agent_thoughts: responseItem.agent_thoughts?.map(thought => ({
+            ...thought,
+            message_files: thought.message_files ? [...thought.message_files] : thought.message_files,
+          })),
+        })
       },
     )
     setChatList(newListWithAnswer)
@@ -372,6 +460,8 @@ const Main: FC<IMainProps> = () => {
         else { toServerInputs[key] = value }
       })
     }
+
+    Object.assign(toServerInputs, getChatInputsForMode(mode))
 
     const data: Record<string, any> = {
       inputs: toServerInputs,
@@ -422,17 +512,25 @@ const Main: FC<IMainProps> = () => {
     }
     let hasSetResponseId = false
 
-    const prevTempNewConversationId = getCurrConversationId() || '-1'
+    const streamOriginConversationId = getCurrConversationId() || '-1'
     let tempNewConversationId = ''
 
+    const isViewingStreamConversation = () => {
+      const viewingId = getCurrConversationId() || '-1'
+      if (streamOriginConversationId === '-1')
+      { return viewingId === '-1' }
+      return viewingId === streamOriginConversationId
+    }
+
     setRespondingTrue()
+
     sendChatMessage(data, {
       getAbortController: (abortController) => {
         setAbortController(abortController)
       },
       onData: (message: string, isFirstMessage: boolean, { conversationId: newConversationId, messageId, taskId }: any) => {
         if (!isAgentMode) {
-          responseItem.content = responseItem.content + message
+          responseItem.content = appendStreamAnswer(responseItem.content, message)
         }
         else {
           const lastThought = responseItem.agent_thoughts?.[responseItem.agent_thoughts?.length - 1]
@@ -443,11 +541,11 @@ const Main: FC<IMainProps> = () => {
           hasSetResponseId = true
         }
 
-        if (isFirstMessage && newConversationId) { tempNewConversationId = newConversationId }
+        if (isFirstMessage && newConversationId)
+        { tempNewConversationId = newConversationId }
 
         setMessageTaskId(taskId)
-        // has switched to other conversation
-        if (prevTempNewConversationId !== getCurrConversationId()) {
+        if (!isViewingStreamConversation()) {
           setIsRespondingConCurrCon(false)
           return
         }
@@ -472,8 +570,8 @@ const Main: FC<IMainProps> = () => {
         }
         setConversationIdChangeBecauseOfNew(false)
         resetNewConversationInputs()
-        setChatNotStarted()
-        setCurrConversationId(tempNewConversationId, APP_ID, true)
+        if (tempNewConversationId && getCurrConversationId() !== tempNewConversationId)
+        { setCurrConversationId(tempNewConversationId, activeAppId, true) }
         setRespondingFalse()
       },
       onFile(file) {
@@ -511,7 +609,7 @@ const Main: FC<IMainProps> = () => {
           }
         }
         // has switched to other conversation
-        if (prevTempNewConversationId !== getCurrConversationId()) {
+        if (!isViewingStreamConversation()) {
           setIsRespondingConCurrCon(false)
           return false
         }
@@ -524,6 +622,7 @@ const Main: FC<IMainProps> = () => {
         })
       },
       onMessageEnd: (messageEnd) => {
+        setRespondingFalse()
         if (messageEnd.metadata?.annotation_reply) {
           responseItem.id = messageEnd.id
           responseItem.annotation = ({
@@ -572,7 +671,7 @@ const Main: FC<IMainProps> = () => {
           draft.splice(draft.findIndex(item => item.id === placeholderAnswerId), 1)
         }))
       },
-      onWorkflowStarted: ({ workflow_run_id, task_id }) => {
+      onWorkflowStarted: ({ workflow_run_id, task_id: _task_id }) => {
         // taskIdRef.current = task_id
         responseItem.workflow_run_id = workflow_run_id
         responseItem.workflowProcess = {
@@ -637,30 +736,38 @@ const Main: FC<IMainProps> = () => {
   }
 
   const renderSidebar = () => {
-    if (!APP_ID || !APP_INFO || !promptConfig) { return null }
+    if (!activeAppId || !APP_INFO || !promptConfig) { return null }
     return (
       <Sidebar
         list={conversationList}
         onCurrentIdChange={handleConversationIdChange}
         currentId={currConversationId}
-        copyRight={APP_INFO.copyright || APP_INFO.title}
+        copyRight={siteInfo.copyright || siteInfo.title}
       />
     )
   }
 
   if (appUnavailable) { return <AppUnavailable isUnknownReason={isUnknownReason} errMessage={!hasSetAppConfig ? 'Please set APP_ID and API_KEY in config/index.tsx' : ''} /> }
 
-  if (!APP_ID || !APP_INFO || !promptConfig) { return <Loading type='app' /> }
+  if (requireLogin && !authChecked) { return <Loading type='app' /> }
+
+  if (requireLogin && !authUser) {
+    return <Login onSuccess={setAuthUser} appTitle={siteInfo.title} />
+  }
+
+  if (!activeAppId || !APP_INFO || !promptConfig) { return <Loading type='app' /> }
 
   return (
-    <div className='bg-gray-100'>
+    <div className='min-h-screen h-screen flex flex-col overflow-hidden bg-gradient-to-br from-slate-50 via-white to-primary-50/30'>
       <Header
-        title={APP_INFO.title}
+        title={siteInfo.title}
         isMobile={isMobile}
+        userEmail={mode === 'public' ? t('app.chat.guestUser') : authUser?.email}
         onShowSideBar={showSidebar}
         onCreateNewChat={() => handleConversationIdChange('-1')}
+        onLogout={requireLogin ? handleLogout : undefined}
       />
-      <div className="flex rounded-t-2xl bg-white overflow-hidden">
+      <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* sidebar */}
         {!isMobile && renderSidebar()}
         {isMobile && isShowSidebar && (
@@ -671,22 +778,24 @@ const Main: FC<IMainProps> = () => {
           </div>
         )}
         {/* main */}
-        <div className='flex-grow flex flex-col h-[calc(100vh_-_3rem)] overflow-y-auto'>
-          <ConfigSence
-            conversationName={conversationName}
-            hasSetInputs={hasSetInputs}
-            isPublicVersion={isShowPrompt}
-            siteInfo={APP_INFO}
-            promptConfig={promptConfig}
-            onStartChat={handleStartChat}
-            canEditInputs={canEditInputs}
-            savedInputs={currInputs as Record<string, any>}
-            onInputsChange={setCurrInputs}
-          ></ConfigSence>
+        <div className='flex-grow flex flex-col min-h-0 h-[calc(100vh_-_3.5rem)] overflow-hidden bg-white/80 backdrop-blur-sm'>
+          {!hasSetInputs && (
+            <ConfigSence
+              conversationName={conversationName}
+              hasSetInputs={hasSetInputs}
+              isPublicVersion={isShowPrompt}
+              siteInfo={siteInfo}
+              promptConfig={promptConfig}
+              onStartChat={handleStartChat}
+              canEditInputs={canEditInputs}
+              savedInputs={currInputs as Record<string, any>}
+              onInputsChange={setCurrInputs}
+            />
+          )}
 
           {
             hasSetInputs && (
-              <div className='relative grow pc:w-[794px] max-w-full mobile:w-full pb-[180px] mx-auto mb-3.5' ref={chatListDomRef}>
+              <div className='flex flex-col flex-1 min-h-0 w-full max-w-4xl mx-auto'>
                 <Chat
                   chatList={chatList}
                   onSend={handleSend}
@@ -695,6 +804,9 @@ const Main: FC<IMainProps> = () => {
                   checkCanSend={checkCanSend}
                   visionConfig={visionConfig}
                   fileConfig={fileConfig}
+                  useCurrentUserAvatar={mode === 'internal' && !!authUser}
+                  userAvatarLetter={mode === 'public' ? '访' : authUser?.email?.[0]?.toUpperCase()}
+                  scrollContainerRef={chatListDomRef}
                 />
               </div>)
           }

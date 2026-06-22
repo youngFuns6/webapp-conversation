@@ -57,6 +57,15 @@ module.exports = {
         pc: '769px',
         // => @media (min-width: 769px) { ... }
       },
+      keyframes: {
+        'cursor-blink': {
+          '0%, 100%': { opacity: '1' },
+          '50%': { opacity: '0' },
+        },
+      },
+      animation: {
+        'cursor-blink': 'cursor-blink 1s step-end infinite',
+      },
     },
   },
   plugins: [

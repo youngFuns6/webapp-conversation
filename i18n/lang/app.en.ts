@@ -8,6 +8,9 @@ const translation = {
     newChat: 'New chat',
     newChatDefaultName: 'New conversation',
     openingStatementTitle: 'Opening statement',
+    inputPlaceholder: 'Type a message...',
+    thinkProcess: 'Thinking',
+    guestUser: 'Guest',
     powerBy: 'Powered by',
     prompt: 'Prompt',
     privatePromptConfigTitle: 'Conversation settings',
@@ -32,6 +35,17 @@ const translation = {
   },
   variableTable: {
     optional: 'Optional',
+  },
+  auth: {
+    login: 'Sign in',
+    logout: 'Sign out',
+    loginSubtitle: 'Sign in with your Dify account to continue',
+    email: 'Email',
+    password: 'Password',
+    emailPlaceholder: 'Enter your email',
+    passwordPlaceholder: 'Enter your password',
+    emailPasswordRequired: 'Email and password are required',
+    loginFailed: 'Login failed. Please check your credentials',
   },
 }
 

@@ -1,5 +1,6 @@
 import { API_PREFIX } from '@/config'
 import Toast from '@/app/components/base/toast'
+import { CHAT_MODE_HEADER, getChatMode } from '@/service/chat-mode'
 import type { AnnotationReply, MessageEnd, MessageReplace, ThoughtItem } from '@/app/components/chat/type'
 import type { VisionFile } from '@/types/app'
 
@@ -12,14 +13,18 @@ const ContentType = {
   download: 'application/octet-stream', // for download
 }
 
+function createRequestHeaders(contentType = ContentType.json): Headers {
+  return new Headers({
+    'Content-Type': contentType,
+    [CHAT_MODE_HEADER]: getChatMode(),
+  })
+}
+
 const baseOptions = {
   method: 'GET',
   mode: 'cors',
-  credentials: 'include', // always send cookies、HTTP Basic authentication.
-  headers: new Headers({
-    'Content-Type': ContentType.json,
-  }),
-  redirect: 'follow',
+  credentials: 'include' as RequestCredentials,
+  redirect: 'follow' as RequestRedirect,
 }
 
 export interface WorkflowStartedResponse {
@@ -139,6 +144,90 @@ function unicodeToChar(text: string) {
   })
 }
 
+function extractStreamText(bufferObj: Record<string, any>): string {
+  if (typeof bufferObj.answer === 'string')
+  { return unicodeToChar(bufferObj.answer) }
+
+  if (typeof bufferObj.text === 'string')
+  { return unicodeToChar(bufferObj.text) }
+
+  if (typeof bufferObj.data?.text === 'string')
+  { return unicodeToChar(bufferObj.data.text) }
+
+  return ''
+}
+
+function handleStreamEvent(
+  bufferObj: Record<string, any>,
+  callbacks: {
+    onData: IOnData
+    onThought?: IOnThought
+    onFile?: IOnFile
+    onMessageEnd?: IOnMessageEnd
+    onMessageReplace?: IOnMessageReplace
+    onWorkflowStarted?: IOnWorkflowStarted
+    onWorkflowFinished?: IOnWorkflowFinished
+    onNodeStarted?: IOnNodeStarted
+    onNodeFinished?: IOnNodeFinished
+    isFirstMessage: { value: boolean }
+  },
+): boolean {
+  const {
+    onData,
+    onThought,
+    onFile,
+    onMessageEnd,
+    onMessageReplace,
+    onWorkflowStarted,
+    onWorkflowFinished,
+    onNodeStarted,
+    onNodeFinished,
+    isFirstMessage,
+  } = callbacks
+
+  const baseInfo = {
+    conversationId: bufferObj.conversation_id,
+    taskId: bufferObj.task_id,
+    messageId: bufferObj.id || bufferObj.message_id || '',
+  }
+
+  if (bufferObj.event === 'message' || bufferObj.event === 'agent_message' || bufferObj.event === 'text_chunk') {
+    const text = extractStreamText(bufferObj)
+    if (text) {
+      onData(text, isFirstMessage.value, baseInfo)
+      isFirstMessage.value = false
+    }
+    return false
+  }
+
+  if (bufferObj.event === 'agent_thought') {
+    onThought?.(bufferObj as ThoughtItem)
+  }
+  else if (bufferObj.event === 'message_file') {
+    onFile?.(bufferObj as VisionFile)
+  }
+  else if (bufferObj.event === 'message_end') {
+    onMessageEnd?.(bufferObj as MessageEnd)
+  }
+  else if (bufferObj.event === 'message_replace') {
+    onMessageReplace?.(bufferObj as MessageReplace)
+  }
+  else if (bufferObj.event === 'workflow_started') {
+    onWorkflowStarted?.(bufferObj as WorkflowStartedResponse)
+  }
+  else if (bufferObj.event === 'workflow_finished') {
+    onWorkflowFinished?.(bufferObj as WorkflowFinishedResponse)
+  }
+  else if (bufferObj.event === 'node_started') {
+    onNodeStarted?.(bufferObj as NodeStartedResponse)
+  }
+  else if (bufferObj.event === 'node_finished') {
+    onNodeFinished?.(bufferObj as NodeFinishedResponse)
+  }
+
+  return false
+}
+
 const handleStream = (
   response: Response,
   onData: IOnData,
@@ -157,8 +246,8 @@ const handleStream = (
   const reader = response.body?.getReader()
   const decoder = new TextDecoder('utf-8')
   let buffer = ''
-  let bufferObj: Record<string, any>
-  let isFirstMessage = true
+  const isFirstMessage = { value: true }
+
   function read() {
     let hasError = false
     reader?.read().then((result: any) => {
@@ -168,67 +257,50 @@ const handleStream = (
       }
       buffer += decoder.decode(result.value, { stream: true })
       const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+
       try {
-        lines.forEach((message) => {
-          if (message.startsWith('data: ')) { // check if it starts with data:
-            try {
-              bufferObj = JSON.parse(message.substring(6)) as Record<string, any>// remove data: and parse as json
-            }
-            catch (e) {
-              // mute handle message cut off
-              onData('', isFirstMessage, {
-                conversationId: bufferObj?.conversation_id,
-                messageId: bufferObj?.message_id,
-              })
-              return
-            }
-            if (bufferObj.status === 400 || !bufferObj.event) {
-              onData('', false, {
-                conversationId: undefined,
-                messageId: '',
-                errorMessage: bufferObj?.message,
-                errorCode: bufferObj?.code,
-              })
-              hasError = true
-              onCompleted?.(true)
-              return
-            }
-            if (bufferObj.event === 'message' || bufferObj.event === 'agent_message') {
-              // can not use format here. Because message is splited.
-              onData(unicodeToChar(bufferObj.answer), isFirstMessage, {
-                conversationId: bufferObj.conversation_id,
-                taskId: bufferObj.task_id,
-                messageId: bufferObj.id,
-              })
-              isFirstMessage = false
-            }
-            else if (bufferObj.event === 'agent_thought') {
-              onThought?.(bufferObj as ThoughtItem)
-            }
-            else if (bufferObj.event === 'message_file') {
-              onFile?.(bufferObj as VisionFile)
-            }
-            else if (bufferObj.event === 'message_end') {
-              onMessageEnd?.(bufferObj as MessageEnd)
-            }
-            else if (bufferObj.event === 'message_replace') {
-              onMessageReplace?.(bufferObj as MessageReplace)
-            }
-            else if (bufferObj.event === 'workflow_started') {
-              onWorkflowStarted?.(bufferObj as WorkflowStartedResponse)
-            }
-            else if (bufferObj.event === 'workflow_finished') {
-              onWorkflowFinished?.(bufferObj as WorkflowFinishedResponse)
-            }
-            else if (bufferObj.event === 'node_started') {
-              onNodeStarted?.(bufferObj as NodeStartedResponse)
-            }
-            else if (bufferObj.event === 'node_finished') {
-              onNodeFinished?.(bufferObj as NodeFinishedResponse)
-            }
+        for (const message of lines) {
+          if (!message.startsWith('data: '))
+          { continue }
+
+          let bufferObj: Record<string, any>
+          try {
+            bufferObj = JSON.parse(message.substring(6)) as Record<string, any>
           }
-        })
-        buffer = lines[lines.length - 1]
+          catch {
+            continue
+          }
+
+          if (bufferObj.status === 400 || (!bufferObj.event && bufferObj.message)) {
+            onData('', false, {
+              conversationId: undefined,
+              messageId: '',
+              errorMessage: bufferObj?.message,
+              errorCode: bufferObj?.code,
+            })
+            hasError = true
+            onCompleted?.(true)
+            return
+          }
+
+          const eventHasError = handleStreamEvent(bufferObj, {
+            onData,
+            onThought,
+            onFile,
+            onMessageEnd,
+            onMessageReplace,
+            onWorkflowStarted,
+            onWorkflowFinished,
+            onNodeStarted,
+            onNodeFinished,
+            isFirstMessage,
+          })
+          if (eventHasError) {
+            hasError = true
+            return
+          }
+        }
       }
       catch (e) {
         onData('', false, {
@@ -240,14 +312,19 @@ const handleStream = (
         onCompleted?.(true)
         return
       }
-      if (!hasError) { read() }
+      if (!hasError)
+      { read() }
     })
   }
   read()
 }
 
-const baseFetch = (url: string, fetchOptions: any, { needAllResponseContent }: IOtherOptions) => {
+const baseFetch = (url: string, fetchOptions: any, { needAllResponseContent, deleteContentType }: IOtherOptions) => {
   const options = Object.assign({}, baseOptions, fetchOptions)
+  const contentType = deleteContentType
+    ? ContentType.download
+    : (fetchOptions.headers?.get?.('Content-type') || ContentType.json)
+  options.headers = createRequestHeaders(contentType)
 
   const urlPrefix = API_PREFIX
 
@@ -339,6 +416,7 @@ export const upload = (fetchOptions: any): Promise<any> => {
   return new Promise((resolve, reject) => {
     const xhr = options.xhr
     xhr.open(options.method, options.url)
+    xhr.setRequestHeader(CHAT_MODE_HEADER, getChatMode())
     for (const key in options.headers) { xhr.setRequestHeader(key, options.headers[key]) }
 
     xhr.withCredentials = true
@@ -372,7 +450,9 @@ export const ssePost = (
 ) => {
   const options = Object.assign({}, baseOptions, {
     method: 'POST',
+    headers: createRequestHeaders(ContentType.json),
   }, fetchOptions)
+  options.headers = createRequestHeaders(ContentType.json)
 
   const urlPrefix = API_PREFIX
   const urlWithPrefix = `${urlPrefix}${url.startsWith('/') ? url : `/${url}`}`
