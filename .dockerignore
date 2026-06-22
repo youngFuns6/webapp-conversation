@@ -1,0 +1,8 @@
+node_modules
+.next
+.git
+.husky
+.pnpm-store
+*.md
+.env.local
+.env*.local

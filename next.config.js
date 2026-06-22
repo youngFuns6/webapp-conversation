@@ -17,6 +17,7 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
   output: 'standalone',
+  basePath: '/webapp',
 }
 
 module.exports = nextConfig

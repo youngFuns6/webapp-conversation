@@ -49,5 +49,7 @@ yarn.lock
 
 # mcp
 .serena
-# pmpm
+# pnpm
 pnpm-lock.yaml
+.pnpm-store/
+.build-marker

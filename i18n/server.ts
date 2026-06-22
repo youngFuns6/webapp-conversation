@@ -6,6 +6,12 @@ import { match } from '@formatjs/intl-localematcher'
 import type { Locale } from '.'
 import { i18n } from '.'
 
+function sanitizeLanguages(languages: string[]): string[] {
+  return languages
+    .map(lang => lang?.trim())
+    .filter((lang): lang is string => Boolean(lang) && lang !== '*')
+}
+
 export const getLocaleOnServer = async (): Promise<Locale> => {
   // @ts-expect-error locales are readonly
   const locales: string[] = i18n.locales
@@ -13,7 +19,7 @@ export const getLocaleOnServer = async (): Promise<Locale> => {
   let languages: string[] | undefined
   // get locale from cookie
   const localeCookie = (await cookies()).get('locale')
-  languages = localeCookie?.value ? [localeCookie.value] : []
+  languages = sanitizeLanguages(localeCookie?.value ? [localeCookie.value] : [])
 
   if (!languages.length) {
     // Negotiator expects plain object so we need to transform headers
@@ -21,8 +27,11 @@ export const getLocaleOnServer = async (): Promise<Locale> => {
     const headersList = await headers()
     headersList.forEach((value, key) => (negotiatorHeaders[key] = value))
     // Use negotiator and intl-localematcher to get best locale
-    languages = new Negotiator({ headers: negotiatorHeaders }).languages()
+    languages = sanitizeLanguages(new Negotiator({ headers: negotiatorHeaders }).languages())
   }
+
+  if (!languages.length)
+    return i18n.defaultLocale
 
   // match locale
   const matchedLocale = match(languages, locales, i18n.defaultLocale) as Locale
