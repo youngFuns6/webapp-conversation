@@ -1,6 +1,6 @@
 'use client'
 import type { FC } from 'react'
-import React, { useEffect, useRef } from 'react'
+import React, { useCallback, useEffect, useRef } from 'react'
 import cn from 'classnames'
 import { useTranslation } from 'react-i18next'
 import { PaperAirplaneIcon } from '@heroicons/react/24/solid'
@@ -53,7 +53,7 @@ const Chat: FC<IChatProps> = ({
   const { notify } = Toast
   const isUseInputMethod = useRef(false)
   const internalScrollRef = useRef<HTMLDivElement>(null)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
 
   const [query, setQuery] = React.useState('')
   const queryRef = useRef('')
@@ -84,9 +84,39 @@ const Chat: FC<IChatProps> = ({
     }
   }, [controlClearQuery])
 
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
+    const container = internalScrollRef.current
+    if (!container)
+    { return }
+    container.scrollTo({
+      top: container.scrollHeight - container.clientHeight,
+      behavior,
+    })
+  }, [])
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
-  }, [chatList, isResponding])
+    const behavior: ScrollBehavior = isResponding ? 'auto' : 'smooth'
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        scrollToBottom(behavior)
+      })
+    })
+  }, [chatList, isResponding, scrollToBottom])
+
+  useEffect(() => {
+    const content = contentRef.current
+    if (!content || !isResponding)
+    { return }
+
+    const observer = new ResizeObserver(() => {
+      scrollToBottom('auto')
+    })
+    observer.observe(content)
+
+    return () => {
+      observer.disconnect()
+    }
+  }, [isResponding, scrollToBottom])
 
   const {
     files,
@@ -166,34 +196,35 @@ const Chat: FC<IChatProps> = ({
     <div className={cn('flex flex-col h-full min-h-0', !feedbackDisabled && 'px-1')}>
       <div
         ref={setScrollRef}
-        className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden space-y-6 px-3 sm:px-4 py-4"
+        className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 sm:px-4 py-4"
       >
-        {chatList.map((item) => {
-          if (item.isAnswer) {
-            const isLast = item.id === chatList[chatList.length - 1].id
+        <div ref={contentRef} className="space-y-6">
+          {chatList.map((item) => {
+            if (item.isAnswer) {
+              const isLast = item.id === chatList[chatList.length - 1].id
+              return (
+                <Answer
+                  key={item.id}
+                  item={item}
+                  feedbackDisabled={feedbackDisabled}
+                  onFeedback={onFeedback}
+                  isResponding={isResponding && isLast}
+                  suggestionClick={suggestionClick}
+                />
+              )
+            }
             return (
-              <Answer
+              <Question
                 key={item.id}
-                item={item}
-                feedbackDisabled={feedbackDisabled}
-                onFeedback={onFeedback}
-                isResponding={isResponding && isLast}
-                suggestionClick={suggestionClick}
+                id={item.id}
+                content={item.content}
+                useCurrentUserAvatar={useCurrentUserAvatar}
+                userAvatarLetter={userAvatarLetter}
+                imgSrcs={(item.message_files && item.message_files?.length > 0) ? item.message_files.map(file => file.url) : []}
               />
             )
-          }
-          return (
-            <Question
-              key={item.id}
-              id={item.id}
-              content={item.content}
-              useCurrentUserAvatar={useCurrentUserAvatar}
-              userAvatarLetter={userAvatarLetter}
-              imgSrcs={(item.message_files && item.message_files?.length > 0) ? item.message_files.map(file => file.url) : []}
-            />
-          )
-        })}
-        <div ref={messagesEndRef} className="h-px shrink-0" />
+          })}
+        </div>
       </div>
 
       {!isHideSendInput && (

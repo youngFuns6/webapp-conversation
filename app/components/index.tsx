@@ -71,8 +71,7 @@ const Main: FC<IMainProps> = ({ mode = 'internal' }) => {
         const merged = mergeSiteInfo(APP_INFO, site)
         setSiteInfo(merged)
         setLocaleOnClient(merged.default_language, true)
-        if (merged.title)
-        { document.title = merged.title }
+        if (merged.title) { document.title = merged.title }
       })
       .catch(() => {
         setLocaleOnClient(APP_INFO.default_language, true)
@@ -87,8 +86,7 @@ const Main: FC<IMainProps> = ({ mode = 'internal' }) => {
 
     fetchAuthStatus()
       .then(({ logged_in, user }) => {
-        if (logged_in && user)
-        { setAuthUser(user) }
+        if (logged_in && user) { setAuthUser(user) }
       })
       .finally(() => {
         setAuthChecked(true)
@@ -140,16 +138,13 @@ const Main: FC<IMainProps> = ({ mode = 'internal' }) => {
   }
 
   const autoStartChatIfReady = (variables: PromptConfig['prompt_variables']) => {
-    if (!variables || isChatStarted || !isNewConversation)
-    { return false }
+    if (!variables || isChatStarted || !isNewConversation) { return false }
 
-    if (variables.some(v => v.required))
-    { return false }
+    if (variables.some(v => v.required)) { return false }
 
     const defaultInputs: Record<string, any> = {}
     variables.forEach((v) => {
-      if (v.default !== undefined && v.default !== '')
-      { defaultInputs[v.key] = v.default }
+      if (v.default !== undefined && v.default !== '') { defaultInputs[v.key] = v.default }
     })
     handleStartChat(defaultInputs)
     return true
@@ -225,8 +220,7 @@ const Main: FC<IMainProps> = ({ mode = 'internal' }) => {
       if (promptConfig && !promptConfig.prompt_variables.some(v => v.required)) {
         const defaultInputs: Record<string, any> = {}
         promptConfig.prompt_variables.forEach((v) => {
-          if (v.default !== undefined && v.default !== '')
-          { defaultInputs[v.key] = v.default }
+          if (v.default !== undefined && v.default !== '') { defaultInputs[v.key] = v.default }
         })
         handleStartChat(defaultInputs)
       }
@@ -342,8 +336,7 @@ const Main: FC<IMainProps> = ({ mode = 'internal' }) => {
 
         setInited(true)
 
-        if (!isNotNewConversation)
-        { autoStartChatIfReady(prompt_variables) }
+        if (!isNotNewConversation) { autoStartChatIfReady(prompt_variables) }
       }
       catch (e: any) {
         if (e.status === 404) {
@@ -358,8 +351,7 @@ const Main: FC<IMainProps> = ({ mode = 'internal' }) => {
   }, [])
 
   useEffect(() => {
-    if (!inited || !promptConfig)
-    { return }
+    if (!inited || !promptConfig) { return }
     autoStartChatIfReady(promptConfig.prompt_variables)
   }, [inited, promptConfig, authUser])
 
@@ -377,8 +369,7 @@ const Main: FC<IMainProps> = ({ mode = 'internal' }) => {
 
     let emptyRequiredInput = false
     promptConfig.prompt_variables.forEach((item) => {
-      if (item.required && !currInputs[item.key])
-      { emptyRequiredInput = true }
+      if (item.required && !currInputs[item.key]) { emptyRequiredInput = true }
     })
 
     if (emptyRequiredInput) {
@@ -396,13 +387,10 @@ const Main: FC<IMainProps> = ({ mode = 'internal' }) => {
   const [_userQuery, _setUserQuery] = useState('')
 
   function appendStreamAnswer(current: string, chunk: string): string {
-    if (!chunk)
-    { return current }
-    if (!current)
-    { return chunk }
+    if (!chunk) { return current }
+    if (!current) { return chunk }
     // Dify workflow may send cumulative answer in a single message event
-    if (chunk.startsWith(current))
-    { return chunk }
+    if (chunk.startsWith(current)) { return chunk }
     return current + chunk
   }
 
@@ -517,8 +505,7 @@ const Main: FC<IMainProps> = ({ mode = 'internal' }) => {
 
     const isViewingStreamConversation = () => {
       const viewingId = getCurrConversationId() || '-1'
-      if (streamOriginConversationId === '-1')
-      { return viewingId === '-1' }
+      if (streamOriginConversationId === '-1') { return viewingId === '-1' }
       return viewingId === streamOriginConversationId
     }
 
@@ -541,8 +528,7 @@ const Main: FC<IMainProps> = ({ mode = 'internal' }) => {
           hasSetResponseId = true
         }
 
-        if (isFirstMessage && newConversationId)
-        { tempNewConversationId = newConversationId }
+        if (isFirstMessage && newConversationId) { tempNewConversationId = newConversationId }
 
         setMessageTaskId(taskId)
         if (!isViewingStreamConversation()) {
@@ -570,8 +556,7 @@ const Main: FC<IMainProps> = ({ mode = 'internal' }) => {
         }
         setConversationIdChangeBecauseOfNew(false)
         resetNewConversationInputs()
-        if (tempNewConversationId && getCurrConversationId() !== tempNewConversationId)
-        { setCurrConversationId(tempNewConversationId, activeAppId, true) }
+        if (tempNewConversationId && getCurrConversationId() !== tempNewConversationId) { setCurrConversationId(tempNewConversationId, activeAppId, true) }
         setRespondingFalse()
       },
       onFile(file) {
