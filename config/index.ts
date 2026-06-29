@@ -23,13 +23,11 @@ export type ChatAccessMode = 'internal' | 'public'
 /** 访客聊天传入 Dify 的 inputs，工作流据此跳过长期记忆 */
 export const GUEST_CHAT_INPUTS: Record<string, string> = {
   enable_long_term_memory: 'false',
-  is_guest: 'true',
 }
 
 /** 内部登录用户传入 Dify 的 inputs */
 export const INTERNAL_CHAT_INPUTS: Record<string, string> = {
   enable_long_term_memory: 'true',
-  is_guest: 'false',
 }
 
 export function getChatInputsForMode(mode: ChatAccessMode): Record<string, string> {
